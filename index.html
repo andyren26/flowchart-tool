@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2-2 流程圖設計實作 (空白繪圖板 - 直存雲端硬碟版)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; background-color: #f4f5f7; overflow: hidden; user-select: none; }
+
+        /* 頂部導覽列 */
+        .navbar { position: absolute; top: 0; left: 0; right: 0; height: 50px; background-color: #2c3e50; color: white; display: flex; align-items: center; padding: 0 15px; justify-content: space-between; z-index: 100; }
+        .navbar h1 { font-size: 17px; margin: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+        .controls { display: flex; align-items: center; gap: 6px; }
+        .controls button { color: white; border: none; padding: 6px 11px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+        
+        .controls #btn-save { background-color: #3498db; }
+        .controls #btn-save:hover { background-color: #2980b9; }
+        .controls #btn-open { background-color: #f39c12; }
+        .controls #btn-open:hover { background-color: #d68910; }
+        .controls #btn-gdrive { background-color: #4285F4; }
+        .controls #btn-gdrive:hover { background-color: #3367D6; }
+        .controls #btn-del-selected { background-color: #e74c3c; }
+        .controls #btn-del-selected:hover { background-color: #c0392b; }
+        .controls #btn-clear { background-color: #95a5a6; }
+        .controls #btn-clear:hover { background-color: #7f8c8d; }
+        .controls #btn-submit { background-color: #2ecc71; }
+        .controls #btn-submit:hover { background-color: #27ae60; }
+
+        /* 隱藏檔案上傳 input */
+        #file-input { display: none; }
+
+        /* 左側選單工具區 */
+        .sidebar { width: 250px; background-color: white; border-right: 1px solid #ccc; padding: 60px 10px 20px; display: flex; flex-direction: column; gap: 15px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 50; overflow-y: auto; }
+        .sidebar h3 { font-size: 14px; color: #7f8c8d; margin-bottom: 5px; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .sidebar-item-name { font-size: 12px; color: #95a5a6; text-align: center; margin-top: -10px; margin-bottom: 5px; }
+
+        /* 工具列圖形樣式 */
+        .tool-shape { width: 100px; height: 45px; margin: 0 auto; cursor: grab; display: flex; justify-content: center; align-items: center; position: relative; }
+        .tool-shape:active { cursor: grabbing; }
+        .tool-shape svg { width: 100%; height: 100%; pointer-events: none; }
+
+        /* 流向線按鈕 */
+        .tool-action { border: 2px solid transparent; border-radius: 8px; transition: 0.2s; background-color: #fdf2e9; cursor: pointer; height: 45px; display: flex; justify-content: center; align-items: center; }
+        .tool-action:hover { background-color: #fae5d3; border-color: #e67e22; }
+        .tool-action.active { background-color: #e74c3c; border-color: #c0392b; animation: pulse 1.5s infinite; }
+        .tool-action.active svg line, .tool-action.active svg path { stroke: white !important; }
+        .tool-action.active svg polygon { fill: white !important; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(231,76,60, 0.5); } 70% { box-shadow: 0 0 0 8px rgba(231,76,60, 0); } 100% { box-shadow: 0 0 0 0 rgba(231,76,60, 0); } }
+
+        /* 右側編輯畫布區 */
+        .canvas-wrapper { flex: 1; padding-top: 50px; position: relative; overflow: auto; }
+        #canvas { width: 2000px; height: 2000px; background-color: white; background-image: linear-gradient(#e0e0e0 1px, transparent 1px), linear-gradient(90deg, #e0e0e0 1px, transparent 1px); background-size: 20px 20px; position: relative; }
+
+        /* 畫布圖形樣式 */
+        .canvas-shape { position: absolute; display: flex; justify-content: center; align-items: center; cursor: move; transition: transform 0.1s; }
+        .canvas-shape svg { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
+        
+        /* 選中狀態（紅框標記） */
+        .canvas-shape.selected { outline: 2px dashed #e74c3c; outline-offset: 4px; }
+        .canvas-shape:hover svg * { stroke: #3498db; stroke-width: 3px; }
+        .connecting-mode-active .canvas-shape { cursor: crosshair !important; }
+        .canvas-shape.connect-start svg * { stroke: #e74c3c !important; stroke-dasharray: 5,5; stroke-width: 3px; }
+
+        /* 圖形右上角的獨立刪除按鈕 (X) */
+        .delete-badge {
+            position: absolute; top: -10px; right: -10px; width: 22px; height: 22px;
+            background-color: #e74c3c; color: white; border-radius: 50%; display: none;
+            justify-content: center; align-items: center; font-size: 13px; font-weight: bold;
+            cursor: pointer; z-index: 20; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .canvas-shape:hover .delete-badge { display: flex; }
+        .delete-badge:hover { background-color: #c0392b; transform: scale(1.15); }
+
+        /* 雙擊文字編輯區塊 */
+        .text-content { position: relative; z-index: 2; outline: none; text-align: center; font-size: 16px; font-weight: bold; color: #2c3e50; min-width: 60px; min-height: 24px; word-wrap: break-word; padding: 5px; cursor: default; }
+        .text-content.editing { cursor: text; border-bottom: 2px dashed #3498db; background: rgba(255,255,255,0.9); border-radius: 4px; user-select: text; }
+        .canvas-shape.diamond .text-content { max-width: 60px; }
+
+        /* SVG 連線層 */
+        #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+
+        /* 自訂無阻擋對話框 (Modal) */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.45); z-index: 9999; display: none;
+            justify-content: center; align-items: center;
+        }
+        .modal-box {
+            background: white; border-radius: 10px; padding: 25px 25px 20px;
+            max-width: 440px; width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            text-align: center; color: #2c3e50;
+        }
+        .modal-box h3 { margin: 0 0 12px; font-size: 18px; }
+        .modal-box p { font-size: 14px; color: #555; line-height: 1.6; margin: 0 0 15px; text-align: left; }
+        .modal-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+        .modal-inputs input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .modal-actions button {
+            border: none; padding: 8px 16px; border-radius: 5px; font-weight: bold;
+            cursor: pointer; font-size: 14px; transition: 0.2s;
+        }
+        .btn-modal-cancel { background: #e0e0e0; color: #333; }
+        .btn-modal-cancel:hover { background: #d0d0d0; }
+        .btn-modal-confirm { background: #4285F4; color: white; }
+        .btn-modal-confirm:hover { background: #3367D6; }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <h1>2-2 流程圖設計實作</h1>
+        <div class="controls">
+            <button id="btn-save" title="下載 .flowchart 原始檔到本機">💾 儲存原始檔</button>
+            <button id="btn-open" title="讀取先前存檔繼續繪製">📂 開啟舊檔</button>
+            <button id="btn-gdrive" title="直接上傳存入 Google 雲端硬碟">☁️ 轉存雲端</button>
+            <button id="btn-del-selected" title="刪除選取圖形或線條">🗑️ 刪除項目</button>
+            <button id="btn-clear" title="清空畫布所有內容">🧹 清空畫布</button>
+            <button id="btn-submit" title="下載 PNG 成品圖到本機">📥 下載圖片</button>
+        </div>
+    </div>
+
+    <!-- 隱藏檔案上傳 input -->
+    <input type="file" id="file-input" accept=".flowchart,.json">
+
+    <!-- 自訂通用對話方塊 (Modal) -->
+    <div id="custom-modal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 id="modal-title">提示</h3>
+            <p id="modal-msg">內容</p>
+            <div id="modal-input-area" class="modal-inputs" style="display: none;">
+                <input type="text" id="stu-info-input" placeholder="請輸入：班級座號姓名 (例如: 70105王小明)">
+            </div>
+            <div class="modal-actions" id="modal-btns">
+                <button class="btn-modal-cancel" id="btn-modal-cancel">取消</button>
+                <button class="btn-modal-confirm" id="btn-modal-ok">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 左側工具列 -->
+    <div class="sidebar">
+        <h3>1. 拖曳圖形至畫布</h3>
+        <div class="tool-shape" draggable="true" data-type="oval">
+            <svg viewBox="0 0 120 50"><rect x="2" y="2" width="116" height="46" rx="23" ry="23" fill="white" stroke="#34495e" stroke-width="2"/></svg>
+        </div><div class="sidebar-item-name">開始/結束</div>
+
+        <div class="tool-shape" draggable="true" data-type="para">
+            <svg viewBox="0 0 120 50"><polygon points="20,2 118,2 100,48 2,48" fill="white" stroke="#34495e" stroke-width="2"/></svg>
+        </div><div class="sidebar-item-name">輸入/輸出</div>
+
+        <div class="tool-shape" draggable="true" data-type="rect">
+            <svg viewBox="0 0 120 50"><rect x="2" y="2" width="116" height="46" fill="white" stroke="#34495e" stroke-width="2"/></svg>
+        </div><div class="sidebar-item-name">處理程序</div>
+
+        <div class="tool-shape" draggable="true" data-type="diamond" style="height: 70px;">
+            <svg viewBox="0 0 120 80"><polygon points="60,2 118,40 60,78 2,40" fill="white" stroke="#34495e" stroke-width="2"/></svg>
+        </div><div class="sidebar-item-name">決策判斷(菱形)</div>
+
+        <div class="tool-shape" draggable="true" data-type="hex">
+            <svg viewBox="0 0 120 50"><polygon points="20,2 100,2 118,25 100,48 20,48 2,25" fill="white" stroke="#34495e" stroke-width="2"/></svg>
+        </div><div class="sidebar-item-name">迴圈(六角形)</div>
+
+        <div class="tool-shape" draggable="true" data-type="text">
+            <svg viewBox="0 0 120 50"><rect width="120" height="50" fill="transparent" stroke="none"/></svg>
+        </div><div class="sidebar-item-name">純文字(標示線條/輸入姓名)</div>
+
+        <h3>2. 點擊啟動自動連線</h3>
+        <div class="tool-action" id="btn-connect-straight" title="點擊後，依序點畫布上的兩個圖形即可連線">
+            <svg viewBox="0 0 100 40">
+                <line x1="20" y1="20" x2="70" y2="20" stroke="#34495e" stroke-width="2"/>
+                <polygon points="70,15 80,20 70,25" fill="#34495e"/>
+            </svg>
+        </div><div class="sidebar-item-name">流向線 (直線)</div>
+
+        <div class="tool-action" id="btn-connect-elbow" title="點擊後，依序點畫布上的兩個圖形即可連線">
+            <svg viewBox="0 0 100 40">
+                <path d="M 20 10 L 45 10 L 45 30 L 70 30" fill="none" stroke="#34495e" stroke-width="2"/>
+                <polygon points="70,25 80,30 70,35" fill="#34495e"/>
+            </svg>
+        </div><div class="sidebar-item-name">流向線 (轉折)</div>
+        
+        <div style="margin-top: 10px; font-size: 13px; color: #555; background: #fdf2e9; padding: 12px; border-radius: 5px; line-height: 1.6;">
+            <strong>💡 操作說明：</strong><br>
+            • <strong>☁️ 轉存雲端</strong>：一鍵直接上傳存入老師指定的雲端硬碟資料夾<br>
+            • <strong>💾 存檔/讀檔</strong>：可隨時儲存或繼續繪製<br>
+            • <strong>✖ 刪除</strong>：點右上角叉叉或按 Delete<br>
+            • <strong>✏️ 文字</strong>：對著圖形按兩下滑鼠左鍵
+        </div>
+    </div>
+
+    <div class="canvas-wrapper" id="canvas-wrapper">
+        <div id="canvas">
+            <svg id="svg-layer"></svg> 
+        </div>
+    </div>
+
+    <script>
+        // ========================================================
+        // ★ 教師設定區：請貼上您的 Google Apps Script 部署網址 ★
+        // ========================================================
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXB_PHzEiJOO1QCD_LuRPz9s3ZARbCd2pw5-czd7DfX8jtyRJPvo1rpWcqZ8M6CRDTvA/exec"; 
+
+        const canvas = document.getElementById('canvas');
+        const svgLayer = document.getElementById('svg-layer');
+        const fileInput = document.getElementById('file-input');
+        let shapeCount = 0;
+        let connectModeType = null; 
+        let connectStartEl = null;
+        let connections = []; 
+        let selectedElement = null;
+
+        const shapesConfig = {
+            'oval': { w: 120, h: 50, svg: '<rect x="2" y="2" width="116" height="46" rx="23" ry="23" fill="white" stroke="#34495e" stroke-width="2"/>' },
+            'para': { w: 120, h: 50, svg: '<polygon points="20,2 118,2 100,48 2,48" fill="white" stroke="#34495e" stroke-width="2"/>' },
+            'rect': { w: 120, h: 50, svg: '<rect x="2" y="2" width="116" height="46" fill="white" stroke="#34495e" stroke-width="2"/>' },
+            'diamond': { w: 120, h: 80, svg: '<polygon points="60,2 118,40 60,78 2,40" fill="white" stroke="#34495e" stroke-width="2"/>' },
+            'hex': { w: 120, h: 50, svg: '<polygon points="20,2 100,2 118,25 100,48 20,48 2,25" fill="white" stroke="#34495e" stroke-width="2"/>' },
+            'text': { w: 120, h: 50, svg: '<rect width="120" height="50" fill="transparent" stroke="none"/>' } 
+        };
+
+        // 自訂彈窗管理系統
+        const modal = document.getElementById('custom-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMsg = document.getElementById('modal-msg');
+        const modalInputArea = document.getElementById('modal-input-area');
+        const stuInfoInput = document.getElementById('stu-info-input');
+        const btnModalOk = document.getElementById('btn-modal-ok');
+        const btnModalCancel = document.getElementById('btn-modal-cancel');
+        let modalConfirmCallback = null;
+
+        function showModal(title, msg, onConfirm, okText = "確定", okColor = "#4285F4", showInput = false) {
+            modalTitle.innerText = title;
+            modalMsg.innerHTML = msg;
+            btnModalOk.innerText = okText;
+            btnModalOk.style.backgroundColor = okColor;
+            modalInputArea.style.display = showInput ? 'flex' : 'none';
+            if (showInput) stuInfoInput.value = '';
+            modalConfirmCallback = onConfirm;
+            modal.style.display = 'flex';
+        }
+
+        btnModalCancel.addEventListener('click', () => {
+            modal.style.display = 'none';
+            modalConfirmCallback = null;
+        });
+
+        btnModalOk.addEventListener('click', () => {
+            modal.style.display = 'none';
+            if (modalConfirmCallback) modalConfirmCallback(stuInfoInput.value.trim());
+            modalConfirmCallback = null;
+        });
+
+        function clearSelection() {
+            if (selectedElement && selectedElement.type === 'shape' && selectedElement.target) {
+                selectedElement.target.classList.remove('selected');
+            }
+            if (selectedElement && selectedElement.type === 'conn') {
+                updateLines();
+            }
+            selectedElement = null;
+        }
+
+        function deleteCurrentSelection() {
+            if (!selectedElement) return;
+
+            if (selectedElement.type === 'shape') {
+                const shape = selectedElement.target;
+                const id = shape.id;
+                shape.remove();
+                connections = connections.filter(conn => conn.from !== id && conn.to !== id);
+                updateLines();
+                selectedElement = null;
+            } else if (selectedElement.type === 'conn') {
+                const conn = selectedElement.target;
+                connections = connections.filter(c => c !== conn);
+                updateLines();
+                selectedElement = null;
+            }
+        }
+
+        canvas.addEventListener('click', (e) => {
+            if (e.target === canvas) clearSelection();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement && document.activeElement.classList.contains('text-content') && document.activeElement.isContentEditable) {
+                return;
+            }
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedElement) {
+                    e.preventDefault();
+                    deleteCurrentSelection();
+                }
+            }
+        });
+
+        document.getElementById('btn-del-selected').addEventListener('click', () => {
+            if (!selectedElement) {
+                showModal('提示', '請先點選畫布上的圖形或線條！', null, '好', '#3498db');
+                return;
+            }
+            deleteCurrentSelection();
+        });
+
+        document.querySelectorAll('.tool-shape').forEach(item => {
+            item.addEventListener('dragstart', (e) => e.dataTransfer.setData('type', e.target.getAttribute('data-type')));
+        });
+
+        canvas.addEventListener('dragover', (e) => e.preventDefault());
+        canvas.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const type = e.dataTransfer.getData('type');
+            if (!type) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const config = shapesConfig[type];
+            const x = e.clientX - rect.left - (config.w / 2); 
+            const y = e.clientY - rect.top - (config.h / 2);
+
+            shapeCount++;
+            createShape('shape_' + shapeCount, type, config, x, y, (type === 'text' ? '點擊修改' : '雙擊輸入'));
+        });
+
+        function createShape(id, type, config, x, y, initialText) {
+            const shape = document.createElement('div');
+            shape.className = `canvas-shape ${type}`;
+            shape.id = id;
+            shape.setAttribute('data-type', type);
+            shape.style.width = `${config.w}px`; shape.style.height = `${config.h}px`;
+            shape.style.left = `${x}px`; shape.style.top = `${y}px`;
+
+            shape.innerHTML = `<svg viewBox="0 0 ${config.w} ${config.h}">${config.svg}</svg>`;
+            
+            const delBadge = document.createElement('div');
+            delBadge.className = 'delete-badge';
+            delBadge.innerHTML = '✕';
+            delBadge.title = '刪除此圖形';
+            delBadge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                shape.remove();
+                connections = connections.filter(conn => conn.from !== shape.id && conn.to !== shape.id);
+                updateLines();
+                if (selectedElement && selectedElement.target === shape) selectedElement = null;
+            });
+            shape.appendChild(delBadge);
+
+            let textDiv = document.createElement('div');
+            textDiv.className = 'text-content';
+            textDiv.innerText = initialText || (type === 'text' ? '點擊修改' : '雙擊輸入');
+            shape.appendChild(textDiv);
+
+            canvas.appendChild(shape);
+            makeDraggable(shape);
+            setupInteraction(shape, textDiv);
+            return shape;
+        }
+
+        function makeDraggable(el) {
+            let isDragging = false, startX, startY, initialX, initialY;
+            el.addEventListener('mousedown', (e) => {
+                if (connectModeType || e.target.classList.contains('editing') || e.target.classList.contains('delete-badge')) return;
+                isDragging = true;
+                startX = e.clientX; startY = e.clientY;
+                initialX = el.offsetLeft; initialY = el.offsetTop;
+                el.style.zIndex = 10;
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                el.style.left = `${initialX + (e.clientX - startX)}px`;
+                el.style.top = `${initialY + (e.clientY - startY)}px`;
+                updateLines(); 
+            });
+            document.addEventListener('mouseup', () => { 
+                if (isDragging) { 
+                    isDragging = false; 
+                    el.style.zIndex = 5; 
+                } 
+            });
+        }
+
+        function setupInteraction(shape, textDiv) {
+            shape.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showModal('刪除圖形', '確定要刪除這個圖形嗎？', () => {
+                    shape.remove();
+                    connections = connections.filter(conn => conn.from !== shape.id && conn.to !== shape.id);
+                    updateLines();
+                    if (selectedElement && selectedElement.target === shape) selectedElement = null;
+                }, '刪除', '#e74c3c');
+            });
+
+            shape.addEventListener('dblclick', (e) => {
+                if (connectModeType) return;
+                e.stopPropagation();
+                
+                textDiv.classList.add('editing');
+                textDiv.contentEditable = "true";
+                textDiv.focus();
+                const range = document.createRange();
+                range.selectNodeContents(textDiv);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            });
+
+            textDiv.addEventListener('blur', () => { 
+                textDiv.contentEditable = "false"; 
+                textDiv.classList.remove('editing'); 
+            });
+
+            shape.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (connectModeType) {
+                    if (!connectStartEl) {
+                        connectStartEl = shape; 
+                        shape.classList.add('connect-start');
+                    } else {
+                        if (connectStartEl.id !== shape.id) {
+                            connections.push({ from: connectStartEl.id, to: shape.id, type: connectModeType });
+                            updateLines();
+                        }
+                        connectStartEl.classList.remove('connect-start'); 
+                        connectStartEl = null;
+                    }
+                } else {
+                    clearSelection();
+                    shape.classList.add('selected');
+                    selectedElement = { type: 'shape', target: shape };
+                }
+            });
+        }
+
+        function setConnectMode(type) {
+            if (connectModeType === type) {
+                connectModeType = null;
+                document.body.classList.remove('connecting-mode-active');
+                document.querySelectorAll('.tool-action').forEach(el => el.classList.remove('active'));
+            } else {
+                connectModeType = type;
+                document.body.classList.add('connecting-mode-active');
+                document.querySelectorAll('.tool-action').forEach(el => el.classList.remove('active'));
+                document.getElementById('btn-connect-' + type).classList.add('active');
+            }
+            if (connectStartEl) { connectStartEl.classList.remove('connect-start'); connectStartEl = null; }
+            clearSelection();
+        }
+
+        document.getElementById('btn-connect-straight').addEventListener('click', () => setConnectMode('straight'));
+        document.getElementById('btn-connect-elbow').addEventListener('click', () => setConnectMode('elbow'));
+
+        function updateLines() {
+            svgLayer.innerHTML = ''; 
+
+            connections.forEach((conn) => {
+                const fromEl = document.getElementById(conn.from);
+                const toEl = document.getElementById(conn.to);
+                if (!fromEl || !toEl) return;
+
+                const rA = { x: fromEl.offsetLeft, y: fromEl.offsetTop, w: fromEl.offsetWidth, h: fromEl.offsetHeight };
+                const rB = { x: toEl.offsetLeft, y: toEl.offsetTop, w: toEl.offsetWidth, h: toEl.offsetHeight };
+                rA.cx = rA.x + rA.w / 2; rA.cy = rA.y + rA.h / 2;
+                rB.cx = rB.x + rB.w / 2; rB.cy = rB.y + rB.h / 2;
+
+                let d = "";
+                let endX, endY, prevX, prevY;
+                const isDiamond = fromEl.classList.contains('diamond');
+                const dx = rB.cx - rA.cx;
+                const dy = rB.cy - rA.cy;
+
+                if (conn.type === 'straight') {
+                    let angle = Math.atan2(dy, dx);
+                    let absCos = Math.abs(Math.cos(angle)), absSin = Math.abs(Math.sin(angle));
+                    let distX = absCos > 0.001 ? (rB.w/2) / absCos : Infinity;
+                    let distY = absSin > 0.001 ? (rB.h/2) / absSin : Infinity;
+                    let distToEdge = Math.min(distX, distY);
+                    
+                    endX = rB.cx - distToEdge * Math.cos(angle);
+                    endY = rB.cy - distToEdge * Math.sin(angle);
+                    prevX = rA.cx; prevY = rA.cy;
+                    d = `M ${rA.cx} ${rA.cy} L ${endX} ${endY}`;
+                } else { 
+                    if (rA.cy > rB.cy + 20) {
+                        if (rA.cx < rB.cx - 20) { 
+                            let startX = rA.x; let startY = rA.cy;
+                            endX = rB.x; endY = rB.cy; 
+                            let midX = Math.min(startX, endX) - 40;
+                            prevX = midX; prevY = endY;
+                            d = `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
+                        } else {
+                            let startX = rA.x + rA.w; let startY = rA.cy;
+                            endX = rB.x + rB.w; endY = rB.cy;
+                            let midX = Math.max(startX, endX) + 40;
+                            prevX = midX; prevY = endY;
+                            d = `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
+                        }
+                    } else if (isDiamond && rA.cy < rB.y && Math.abs(dx) > 20) {
+                        endX = rB.cx; endY = rB.y; prevX = rB.cx; prevY = rA.cy;
+                        let startX = dx > 0 ? rA.x + rA.w : rA.x;
+                        d = `M ${startX} ${rA.cy} L ${prevX} ${prevY} L ${endX} ${endY}`;
+                    } else if (Math.abs(dx) <= 20) { 
+                        prevX = rB.cx;
+                        if (rA.cy < rB.cy) {
+                            endX = rB.cx; endY = rB.y; prevY = rA.y + rA.h;
+                            d = `M ${rA.cx} ${rA.y + rA.h} L ${endX} ${endY}`;
+                        } else {
+                            endX = rB.cx; endY = rB.y + rB.h; prevY = rA.y;
+                            d = `M ${rA.cx} ${rA.y} L ${endX} ${endY}`;
+                        }
+                    } else if (Math.abs(dy) <= 20) { 
+                        prevY = rB.cy;
+                        if (rA.cx < rB.cx) {
+                            endX = rB.x; endY = rB.cy; prevX = rA.x + rA.w;
+                            d = `M ${rA.x + rA.w} ${rA.cy} L ${endX} ${endY}`;
+                        } else {
+                            endX = rB.x + rB.w; endY = rB.cy; prevX = rA.x;
+                            d = `M ${rA.cx} ${rA.cy} L ${endX} ${endY}`;
+                        }
+                    } else if (rA.cy < rB.y) {
+                        endX = rB.cx; endY = rB.y; prevX = rB.cx; prevY = (rA.y + rA.h + rB.y) / 2;
+                        d = `M ${rA.cx} ${rA.y + rA.h} L ${rA.cx} ${prevY} L ${prevX} ${prevY} L ${endX} ${endY}`;
+                    } else if (rA.y > rB.y + rB.h) {
+                        endX = rB.cx; endY = rB.y + rB.h; prevX = rB.cx; prevY = (rA.y + rB.y + rB.h) / 2;
+                        d = `M ${rA.cx} ${rA.y} L ${rA.cx} ${prevY} L ${prevX} ${prevY} L ${endX} ${endY}`;
+                    } else {
+                        prevX = (rA.cx + rB.cx) / 2; prevY = rB.cy;
+                        if (dx > 0) { endX = rB.x; endY = rB.cy; d = `M ${rA.x + rA.w} ${rA.cy} L ${prevX} ${rA.cy} L ${prevX} ${prevY} L ${endX} ${endY}`; }
+                        else { endX = rB.x + rB.w; endY = rB.cy; d = `M ${rA.x} ${rA.cy} L ${prevX} ${rA.cy} L ${prevX} ${prevY} L ${endX} ${endY}`; }
+                    }
+                }
+
+                const angle = Math.atan2(endY - prevY, endX - prevX);
+                const arrowSize = 14;
+                const arrowAngle = Math.PI / 6; 
+                const p1X = endX - arrowSize * Math.cos(angle - arrowAngle);
+                const p1Y = endY - arrowSize * Math.sin(angle - arrowAngle);
+                const p2X = endX - arrowSize * Math.cos(angle + arrowAngle);
+                const p2Y = endY - arrowSize * Math.sin(angle + arrowAngle);
+                const arrowPoints = `${endX},${endY} ${p1X},${p1Y} ${p2X},${p2Y}`;
+
+                const isConnSelected = (selectedElement && selectedElement.type === 'conn' && selectedElement.target === conn);
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.style.pointerEvents = 'all'; 
+                g.style.cursor = 'pointer';
+
+                const hitbox = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                hitbox.setAttribute('d', d); 
+                hitbox.setAttribute('stroke', 'rgba(0,0,0,0.01)'); 
+                hitbox.setAttribute('stroke-width', '30'); 
+                hitbox.setAttribute('fill', 'none');
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', d); 
+                path.setAttribute('stroke', isConnSelected ? '#e74c3c' : '#34495e');
+                path.setAttribute('stroke-width', isConnSelected ? '4' : '2'); 
+                path.setAttribute('fill', 'none');
+
+                const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                arrow.setAttribute('points', arrowPoints); 
+                arrow.setAttribute('fill', isConnSelected ? '#e74c3c' : '#34495e');
+
+                g.appendChild(hitbox); g.appendChild(path); g.appendChild(arrow);
+
+                g.addEventListener('mouseenter', () => { 
+                    path.setAttribute('stroke', '#e74c3c'); 
+                    path.setAttribute('stroke-width', '4'); 
+                    arrow.setAttribute('fill', '#e74c3c'); 
+                });
+                g.addEventListener('mouseleave', () => { 
+                    const currentlySelected = (selectedElement && selectedElement.type === 'conn' && selectedElement.target === conn);
+                    path.setAttribute('stroke', currentlySelected ? '#e74c3c' : '#34495e'); 
+                    path.setAttribute('stroke-width', currentlySelected ? '4' : '2'); 
+                    arrow.setAttribute('fill', currentlySelected ? '#e74c3c' : '#34495e'); 
+                });
+
+                g.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    clearSelection();
+                    selectedElement = { type: 'conn', target: conn };
+                    updateLines();
+                });
+
+                const deleteLine = (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    showModal('刪除連線', '確定要刪除這條連線嗎？', () => {
+                        connections = connections.filter(c => c !== conn); 
+                        if (selectedElement && selectedElement.target === conn) selectedElement = null;
+                        updateLines(); 
+                    }, '刪除', '#e74c3c');
+                };
+
+                g.addEventListener('contextmenu', deleteLine); 
+                g.addEventListener('dblclick', deleteLine);    
+
+                svgLayer.appendChild(g);
+            });
+        }
+
+        // 清空畫布 (自訂彈窗)
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            showModal('清空畫布確認', '⚠️ 警告：這將會清除畫布上的<strong>所有圖形與連線</strong>，確定要清空嗎？', () => {
+                document.querySelectorAll('.canvas-shape').forEach(el => el.remove());
+                connections = []; 
+                selectedElement = null;
+                updateLines(); 
+                shapeCount = 0;
+            }, '確定清空', '#e74c3c');
+        });
+
+        function getProjectJson() {
+            const shapeElements = document.querySelectorAll('.canvas-shape');
+            const shapesData = [];
+            shapeElements.forEach(el => {
+                const textEl = el.querySelector('.text-content');
+                shapesData.push({
+                    id: el.id,
+                    type: el.getAttribute('data-type'),
+                    left: parseInt(el.style.left) || el.offsetLeft,
+                    top: parseInt(el.style.top) || el.offsetTop,
+                    text: textEl ? textEl.innerText : ''
+                });
+            });
+
+            return JSON.stringify({
+                version: "2.0",
+                timestamp: new Date().toISOString(),
+                shapeCount: shapeCount,
+                shapes: shapesData,
+                connections: connections
+            }, null, 2);
+        }
+
+        // 儲存原始檔到本機
+        document.getElementById('btn-save').addEventListener('click', () => {
+            const shapeElements = document.querySelectorAll('.canvas-shape');
+            if (shapeElements.length === 0 && connections.length === 0) {
+                showModal('提示', '畫布上目前沒有任何內容可以儲存喔！', null, '好', '#3498db');
+                return;
+            }
+
+            const jsonStr = getProjectJson();
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+            link.download = `流程圖專案_${dateStr}.flowchart`;
+            link.href = url;
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // 開啟舊檔
+        document.getElementById('btn-open').addEventListener('click', () => {
+            fileInput.value = '';
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const project = JSON.parse(event.target.result);
+                    if (!project.shapes || !Array.isArray(project.shapes)) {
+                        showModal('讀取失敗', '檔案格式不正確，無法讀取流程圖專案！', null, '好', '#e74c3c');
+                        return;
+                    }
+
+                    document.querySelectorAll('.canvas-shape').forEach(el => el.remove());
+                    connections = [];
+                    clearSelection();
+
+                    shapeCount = project.shapeCount || 0;
+
+                    project.shapes.forEach(item => {
+                        const config = shapesConfig[item.type];
+                        if (config) {
+                            createShape(item.id, item.type, config, item.left, item.top, item.text);
+                            const idNum = parseInt(item.id.replace('shape_', ''));
+                            if (!isNaN(idNum) && idNum > shapeCount) shapeCount = idNum;
+                        }
+                    });
+
+                    if (project.connections && Array.isArray(project.connections)) {
+                        connections = project.connections;
+                    }
+
+                    updateLines();
+                    showModal('讀取成功', '專案已成功還原！您可以繼續編輯流程圖了。', null, '開始繪圖', '#2ecc71');
+
+                } catch (err) {
+                    console.error(err);
+                    showModal('讀取失敗', '開啟檔案失敗：檔案內容可能已損毀或不是合法的專案檔！', null, '好', '#e74c3c');
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        // ========================================================
+        // ★ 核心新功能：方案 A 直接後台靜默上傳 Google 雲端硬碟 ★
+        // ========================================================
+        async function uploadFileToGAS(filename, mimeType, base64Data) {
+            // 使用 text/plain 避免觸發 CORS preflight OPTIONS 請求
+            const response = await fetch(GAS_WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ filename, mimeType, base64Data })
+            });
+            return await response.json();
+        }
+
+        document.getElementById('btn-gdrive').addEventListener('click', () => {
+            const shapes = document.querySelectorAll('.canvas-shape');
+            if (shapes.length === 0 && connections.length === 0) {
+                showModal('提示', '畫布上目前沒有內容可以轉存喔！', null, '好', '#3498db');
+                return;
+            }
+
+            if (GAS_WEB_APP_URL.includes("xxxxxxxxx")) {
+                showModal('教師設定提醒', '⚠️ 尚未設定 Google Apps Script 網址！<br><br>請老師先依照步驟在程式碼頂端填入 <code>GAS_WEB_APP_URL</code> 後，學生即可享受免拖拉一鍵直存雲端功能。', null, '我知道了', '#e67e22');
+                return;
+            }
+
+            showModal('☁️ 轉存至 Google 雲端硬碟', '系統將把<strong>【原始檔 .flowchart】</strong>與<strong>【成品圖片 .png】</strong>直接存入雲端硬碟。<br><br>請輸入您的班級座號姓名：', async (stuInfo) => {
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+                const prefix = stuInfo ? `${stuInfo}_` : `學生作業_`;
+                
+                const btnGdrive = document.getElementById('btn-gdrive');
+                const origText = btnGdrive.innerText;
+                btnGdrive.innerText = '⏳ 正在上傳雲端...';
+                btnGdrive.disabled = true;
+
+                try {
+                    // 1. 準備原始檔 Base64 (utf-8 相容)
+                    const jsonStr = getProjectJson();
+                    const base64Flowchart = btoa(unescape(encodeURIComponent(jsonStr)));
+                    const flowchartName = `${prefix}${dateStr}.flowchart`;
+
+                    // 2. 準備圖片檔 Base64
+                    clearSelection();
+                    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+                    shapes.forEach(shape => {
+                        const x = shape.offsetLeft; const y = shape.offsetTop;
+                        if (x < minX) minX = x; if (y < minY) minY = y;
+                        if (x + shape.offsetWidth > maxX) maxX = x + shape.offsetWidth;
+                        if (y + shape.offsetHeight > maxY) maxY = y + shape.offsetHeight;
+                    });
+                    const padding = 60;
+                    const canvasOutput = await html2canvas(canvas, {
+                        x: Math.max(0, minX - padding), y: Math.max(0, minY - padding),
+                        width: (maxX - minX) + padding * 2, height: (maxY - minY) + padding * 2,
+                        backgroundColor: '#ffffff', scale: 2
+                    });
+                    const imgDataUrl = canvasOutput.toDataURL('image/png');
+                    const base64Png = imgDataUrl.split(',')[1];
+                    const pngName = `${prefix}${dateStr}.png`;
+
+                    // 3. 直接上傳原始檔與圖片檔
+                    await uploadFileToGAS(flowchartName, 'application/json', base64Flowchart);
+                    await uploadFileToGAS(pngName, 'image/png', base64Png);
+
+                    showModal('✅ 上傳成功', `太棒了！您的檔案已直接存入 Google 雲端硬碟：<br><br>• 原始檔：<code>${flowchartName}</code><br>• 圖片檔：<code>${pngName}</code><br><br>學生完全不需手動拖拉！`, null, '太棒了', '#2ecc71');
+                } catch (err) {
+                    console.error(err);
+                    showModal('❌ 上傳失敗', `連線到 Google 雲端硬碟時發生錯誤：<br>${err.message}<br><br>請確認網路連線或稍後再試。`, null, '好', '#e74c3c');
+                } finally {
+                    btnGdrive.innerText = origText;
+                    btnGdrive.disabled = false;
+                }
+            }, '開始直接存入雲端', '#4285F4', true);
+        });
+
+        // 下載圖片到本機
+        document.getElementById('btn-submit').addEventListener('click', () => {
+            const shapes = document.querySelectorAll('.canvas-shape');
+            if (shapes.length === 0) { 
+                showModal('提示', '畫布上沒有內容可以匯出喔！', null, '好', '#3498db');
+                return; 
+            }
+
+            clearSelection();
+
+            let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+            shapes.forEach(shape => {
+                const x = shape.offsetLeft; const y = shape.offsetTop;
+                if (x < minX) minX = x; if (y < minY) minY = y;
+                if (x + shape.offsetWidth > maxX) maxX = x + shape.offsetWidth;
+                if (y + shape.offsetHeight > maxY) maxY = y + shape.offsetHeight;
+            });
+
+            const padding = 60; 
+            const btn = document.getElementById('btn-submit');
+            const origText = btn.innerText;
+            btn.innerText = '圖片處理中...'; btn.disabled = true;
+
+            if (connectStartEl) connectStartEl.classList.remove('connect-start');
+
+            html2canvas(canvas, {
+                x: Math.max(0, minX - padding), y: Math.max(0, minY - padding),
+                width: (maxX - minX) + padding * 2, height: (maxY - minY) + padding * 2,
+                backgroundColor: '#ffffff', scale: 2
+            }).then(canvasOutput => {
+                const link = document.createElement('a');
+                link.download = `流程圖作業_成品.png`;
+                link.href = canvasOutput.toDataURL('image/png');
+                link.click();
+                
+                btn.innerText = origText; btn.disabled = false;
+            });
+        });
+    </script>
+</body>
+</html>
