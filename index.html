@@ -130,7 +130,21 @@
             <h3 id="modal-title">提示</h3>
             <p id="modal-msg">內容</p>
             <div id="modal-input-area" class="modal-inputs" style="display: none;">
-                <input type="text" id="stu-info-input" placeholder="請輸入：班級座號姓名 (例如: 70105王小明)">
+                <div style="display: flex; gap: 8px;">
+                    <div style="flex: 1; text-align: left;">
+                        <label style="font-size: 12px; font-weight: bold; color: #555;">班級：</label>
+                        <input type="text" id="stu-class-input" placeholder="例: 701" maxlength="4" style="margin-top: 3px;">
+                    </div>
+                    <div style="flex: 1; text-align: left;">
+                        <label style="font-size: 12px; font-weight: bold; color: #555;">座號 (2碼)：</label>
+                        <input type="text" id="stu-seat-input" placeholder="例: 01" maxlength="2" style="margin-top: 3px;">
+                    </div>
+                </div>
+                <div style="text-align: left;">
+                    <label style="font-size: 12px; font-weight: bold; color: #555;">姓名：</label>
+                    <input type="text" id="stu-name-input" placeholder="請輸入真實姓名" style="margin-top: 3px;">
+                </div>
+                <div id="modal-error-msg" style="color: #c0392b; font-size: 13px; font-weight: bold; text-align: left; background: #fdf2f2; padding: 8px 10px; border-radius: 5px; border-left: 4px solid #e74c3c; display: none; line-height: 1.5;"></div>
             </div>
             <div class="modal-actions" id="modal-btns">
                 <button class="btn-modal-cancel" id="btn-modal-cancel">取消</button>
@@ -198,9 +212,14 @@
 
     <script>
         // ========================================================
-        // ★ 教師設定區：請貼上您的 Google Apps Script 部署網址 ★
+        // ★ 教師設定區 ★
         // ========================================================
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXB_PHzEiJOO1QCD_LuRPz9s3ZARbCd2pw5-czd7DfX8jtyRJPvo1rpWcqZ8M6CRDTvA/exec"; 
+        // 1. Google Apps Script 部署網址
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyEwOzw0hJW0BLsku0RCQvylGL721Mo-kx1C4amHe4w9DqnFwcWnorg6_FJiuF4lBFb/exec"; 
+
+        // 2. 允許繳交的班級清單 (可設定一個或多個，例如 ["701"] 或 ["701", "702", "725"])
+        //    學生若輸入非清單中的班級（例如 101），將會被系統阻擋並跳出提醒！
+        const ALLOWED_CLASSES = ["702", "704", "705", "706", "707", "708", "709", "711", "717", "721","722", "723", "724", "725", "726", "727", "730"]; 
 
         const canvas = document.getElementById('canvas');
         const svgLayer = document.getElementById('svg-layer');
@@ -225,18 +244,51 @@
         const modalTitle = document.getElementById('modal-title');
         const modalMsg = document.getElementById('modal-msg');
         const modalInputArea = document.getElementById('modal-input-area');
-        const stuInfoInput = document.getElementById('stu-info-input');
+        const stuClassInput = document.getElementById('stu-class-input');
+        const stuSeatInput = document.getElementById('stu-seat-input');
+        const stuNameInput = document.getElementById('stu-name-input');
+        const modalErrorMsg = document.getElementById('modal-error-msg');
         const btnModalOk = document.getElementById('btn-modal-ok');
         const btnModalCancel = document.getElementById('btn-modal-cancel');
         let modalConfirmCallback = null;
+        let isInputMode = false;
+
+        function resetInputStyles() {
+            modalErrorMsg.style.display = 'none';
+            modalErrorMsg.innerText = '';
+            [stuClassInput, stuSeatInput, stuNameInput].forEach(inp => {
+                if (inp) {
+                    inp.style.border = '1px solid #ccc';
+                    inp.style.backgroundColor = '#fff';
+                }
+            });
+        }
+
+        function showInputError(inputEl, msg) {
+            modalErrorMsg.innerText = msg;
+            modalErrorMsg.style.display = 'block';
+            if (inputEl) {
+                inputEl.style.border = '2px solid #e74c3c';
+                inputEl.style.backgroundColor = '#fdf2f2';
+                inputEl.focus();
+            }
+        }
 
         function showModal(title, msg, onConfirm, okText = "確定", okColor = "#4285F4", showInput = false) {
             modalTitle.innerText = title;
             modalMsg.innerHTML = msg;
             btnModalOk.innerText = okText;
             btnModalOk.style.backgroundColor = okColor;
+            isInputMode = showInput;
             modalInputArea.style.display = showInput ? 'flex' : 'none';
-            if (showInput) stuInfoInput.value = '';
+            
+            if (showInput) {
+                resetInputStyles();
+                stuClassInput.value = '';
+                stuSeatInput.value = '';
+                stuNameInput.value = '';
+                setTimeout(() => stuClassInput.focus(), 100);
+            }
             modalConfirmCallback = onConfirm;
             modal.style.display = 'flex';
         }
@@ -244,12 +296,61 @@
         btnModalCancel.addEventListener('click', () => {
             modal.style.display = 'none';
             modalConfirmCallback = null;
+            isInputMode = false;
         });
 
         btnModalOk.addEventListener('click', () => {
-            modal.style.display = 'none';
-            if (modalConfirmCallback) modalConfirmCallback(stuInfoInput.value.trim());
-            modalConfirmCallback = null;
+            if (isInputMode) {
+                resetInputStyles();
+                const cls = stuClassInput.value.trim();
+                const seat = stuSeatInput.value.trim();
+                const name = stuNameInput.value.trim();
+
+                // 1. 檢驗班級
+                if (!cls) {
+                    showInputError(stuClassInput, '⚠️ 請輸入班級（例如：' + ALLOWED_CLASSES[0] + '）！');
+                    return;
+                }
+                if (!ALLOWED_CLASSES.includes(cls)) {
+                    showInputError(stuClassInput, `⚠️ 班級輸入錯誤！本課程限定班級為：【${ALLOWED_CLASSES.join('、')}】，請勿輸入其他年級或班級（如 101）！`);
+                    return;
+                }
+
+                // 2. 檢驗座號 (必須剛好 2 碼數字)
+                if (!seat) {
+                    showInputError(stuSeatInput, '⚠️ 請輸入座號！座號必須為 2 碼（例如：01、05）！');
+                    return;
+                }
+                if (!/^\d{2}$/.test(seat)) {
+                    showInputError(stuSeatInput, `⚠️ 座號格式錯誤！座號必須剛好「2 碼數字」（例如：1號請輸入 01，不可只輸入 1）！`);
+                    return;
+                }
+                const seatNum = parseInt(seat, 10);
+                if (seatNum < 1 || seatNum > 50) {
+                    showInputError(stuSeatInput, '⚠️ 座號請介於 01 到 50 號之間！');
+                    return;
+                }
+
+                // 3. 檢驗姓名 (不能空白)
+                if (!name) {
+                    showInputError(stuNameInput, '⚠️ 姓名不能空白，請輸入真實姓名！');
+                    return;
+                }
+                if (name.length < 2) {
+                    showInputError(stuNameInput, '⚠️ 請輸入完整的真實姓名！');
+                    return;
+                }
+
+                // 全部檢驗通過
+                modal.style.display = 'none';
+                isInputMode = false;
+                if (modalConfirmCallback) modalConfirmCallback({ cls, seat, name });
+                modalConfirmCallback = null;
+            } else {
+                modal.style.display = 'none';
+                if (modalConfirmCallback) modalConfirmCallback();
+                modalConfirmCallback = null;
+            }
         });
 
         function clearSelection() {
@@ -728,10 +829,11 @@
                 return;
             }
 
-            showModal('☁️ 轉存至 Google 雲端硬碟', '系統將把<strong>【原始檔 .flowchart】</strong>與<strong>【成品圖片 .png】</strong>直接存入雲端硬碟。<br><br>請輸入您的班級座號姓名：', async (stuInfo) => {
+            showModal('☁️ 轉存至 Google 雲端硬碟', '系統將把<strong>【原始檔 .flowchart】</strong>與<strong>【成品圖片 .png】</strong>直接存入雲端硬碟。<br><br>請填寫班級、座號與姓名（皆會進行格式檢驗）：', async (stu) => {
                 const now = new Date();
                 const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
-                const prefix = stuInfo ? `${stuInfo}_` : `學生作業_`;
+                // 檔名規格：班級座號姓名_時間 (例如: 70101王小明_20261028_2130)
+                const prefix = `${stu.cls}${stu.seat}${stu.name}_`;
                 
                 const btnGdrive = document.getElementById('btn-gdrive');
                 const origText = btnGdrive.innerText;
